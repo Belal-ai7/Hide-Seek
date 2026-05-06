@@ -1,7 +1,7 @@
 import { Component, OnInit, signal, computed, inject } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
-import { GameService, Place, PlaceType, GameResult } from '../../services/game.service';
+import { GameService, Place } from '../../services/game.service';
 
 @Component({
   selector: 'app-game-grid',
@@ -14,7 +14,6 @@ export class GameGridComponent implements OnInit {
 
   // UI State
   worldSizeInput = signal<number>(4);
-  selectedPosition = signal<number | null>(null);
   showSetup = signal<boolean>(true);
   showGame = signal<boolean>(false);
   showResults = signal<boolean>(false);
@@ -22,36 +21,66 @@ export class GameGridComponent implements OnInit {
 
   // Game state from service
   places = this.gameService.placesValue;
-  worldSize = this.gameService.worldSizeValue;
+  numPlaces = this.gameService.numPlacesValue;
   playerRole = this.gameService.playerRoleValue;
-  gameResult = this.gameService.gameResultValue;
+  selectedPosition = this.gameService.selectedPositionValue;
   isRoundPlayed = this.gameService.isRoundPlayedValue;
-  playerTotalScore = this.gameService.playerTotalScoreValue;
-  computerTotalScore = this.gameService.computerTotalScoreValue;
-  roundsWon = this.gameService.roundsWonValue;
-  computerRoundsWon = this.gameService.computerRoundsWonValue;
-  totalRounds = this.gameService.totalRoundsValue;
-  simulationResults = this.gameService.simulationResultsValue;
+  lastRoundResult = this.gameService.lastRoundResultValue;
+ playerScore = computed(() => this.gameService.score().player);
+computerScore = computed(() => this.gameService.score().computer);
+roundsWonPlayer = computed(() => this.gameService.score().playerWins);
+roundsWonComputer = computed(() => this.gameService.score().computerWins);
+totalRounds = computed(() => this.gameService.score().total);
+  probabilities = this.gameService.probs;
+  viewMode = this.gameService.viewModeValue;
+  isSimulating = this.gameService.isSimulatingValue;
+  simulationProgress = this.gameService.simulationProgressValue;
+  simulationResult = this.gameService.simulationResultValue;
 
   // Payoff matrix for display
-  payoffMatrix = signal<number[][]>([]);
+  payoffMatrix = computed(() => this.gameService.getPayoffMatrix());
 
   // Computed array for matrix header iteration
   matrixHeaders = computed(() => {
-    const size = this.worldSize();
+    const size = this.numPlaces();
     return Array.from({ length: size }, (_, i) => i + 1);
+  });
+
+  // Computed grid layout for 2D view
+  gridLayout = computed(() => {
+    const places = this.places();
+    const currentViewMode = this.viewMode();
+    
+    if (currentViewMode === '1D') {
+      return [places];
+    }
+    
+    // 2D layout - calculate grid dimensions
+    const size = places.length;
+    const cols = Math.ceil(Math.sqrt(size));
+    const rows = Math.ceil(size / cols);
+    
+    const grid: (Place | null)[][] = [];
+    for (let row = 0; row < rows; row++) {
+      const rowData: (Place | null)[] = [];
+      for (let col = 0; col < cols; col++) {
+        const index = row * cols + col;
+        rowData.push(index < size ? places[index] : null);
+      }
+      grid.push(rowData);
+    }
+    return grid;
   });
 
   ngOnInit(): void {
     this.gameService.initializeWorld(4);
-    this.updatePayoffMatrix();
   }
 
-  get placeTypes(): { type: PlaceType; label: string; color: string; description: string }[] {
+  get placeTypes(): { type: 'easy' | 'neutral' | 'hard'; label: string; color: string; description: string }[] {
     return [
-      { type: 'hard', label: 'Hard', color: '#ef4444', description: 'Hard for seeker' },
-      { type: 'neutral', label: 'Neutral', color: '#f59e0b', description: 'Neutral' },
-      { type: 'easy', label: 'Easy', color: '#22c55e', description: 'Easy for seeker' }
+      { type: 'hard', label: 'Hard', color: '#ef4444', description: 'Hard for seeker (hider advantage)' },
+      { type: 'neutral', label: 'Neutral', color: '#f59e0b', description: 'Balanced' },
+      { type: 'easy', label: 'Easy', color: '#22c55e', description: 'Easy for seeker (seeker advantage)' }
     ];
   }
 
@@ -73,36 +102,56 @@ export class GameGridComponent implements OnInit {
     }
   }
 
-  getPlaceTypeLabel(type: PlaceType): string {
+  getPlaceTypeLabel(type: string): string {
     switch (type) {
       case 'hard': return 'Hard';
       case 'neutral': return 'Neutral';
       case 'easy': return 'Easy';
+      default: return type;
     }
+  }
+
+  // Format probability as percentage
+  formatProbability(prob: number | undefined): string {
+    if (prob === undefined || prob === null) return '';
+    return (prob * 100).toFixed(1) + '%';
+  }
+
+  // Get probability display class
+  getProbabilityClass(prob: number | undefined): string {
+    if (prob === undefined || prob === null) return '';
+    const pct = prob * 100;
+    if (pct > 30) return 'prob-high';
+    if (pct > 10) return 'prob-medium';
+    return 'prob-low';
   }
 
   // Setup methods
   setWorldSize(size: number): void {
     this.worldSizeInput.set(size);
     this.gameService.initializeWorld(size);
-    this.updatePayoffMatrix();
   }
 
   selectRole(role: 'hider' | 'seeker'): void {
     this.gameService.setPlayerRole(role);
     this.showSetup.set(false);
     this.showGame.set(true);
+    // Solve the game once role is selected
+    this.gameService.solveGame();
   }
 
   toggleSimulationMode(): void {
     this.simulationMode.set(!this.simulationMode());
   }
 
+  toggleViewMode(): void {
+    this.gameService.toggleViewMode();
+  }
+
   // Game methods
   selectPosition(position: number): void {
     if (this.isRoundPlayed()) return;
     
-    this.selectedPosition.set(position);
     this.gameService.makePlayerChoice(position);
   }
 
@@ -114,12 +163,10 @@ export class GameGridComponent implements OnInit {
 
     this.gameService.playRound();
     this.showResults.set(true);
-    this.updatePayoffMatrix();
   }
 
   playNextRound(): void {
     this.gameService.resetRound();
-    this.selectedPosition.set(null);
     this.showResults.set(false);
   }
 
@@ -129,51 +176,37 @@ export class GameGridComponent implements OnInit {
     this.showSetup.set(true);
     this.showGame.set(false);
     this.showResults.set(false);
-    this.selectedPosition.set(null);
-    this.updatePayoffMatrix();
   }
 
   runSimulation(): void {
     this.gameService.resetGame();
     this.gameService.initializeWorld(this.worldSizeInput());
-    this.gameService.runSimulation(100);
+    this.gameService.simulateGame(100);
     this.showGame.set(true);
     this.showResults.set(true);
-    this.updatePayoffMatrix();
-  }
-
-  private updatePayoffMatrix(): void {
-    const matrix = this.gameService.getPayoffMatrix();
-    this.payoffMatrix.set(matrix);
   }
 
   // Get result message
   getResultMessage(): string {
-    const result = this.gameResult();
+    const result = this.lastRoundResult();
     if (!result) return '';
-
-    const playerRole = this.playerRole();
-    if (result.roundWinner === 'draw') {
-      return "It's a draw!";
-    }
-
-    const playerWon = (playerRole === 'hider' && result.roundWinner === 'hider') ||
-                      (playerRole === 'seeker' && result.roundWinner === 'seeker');
-
-    if (playerWon) {
-      return `You won! ${playerRole === 'hider' ? 'Hider' : 'Seeker'} successfully ${playerRole === 'hider' ? 'hid' : 'found'}!`;
-    } else {
-      return `You lost! Computer ${result.roundWinner === 'hider' ? 'hid successfully' : 'found the hider'}!`;
-    }
+    return result.message;
   }
 
-  // Simulation stats
+  // Get simulation stats
   getSimulationStats(): { wins: number; losses: number; winRate: number } {
-    const results = this.simulationResults();
-    const wins = results.filter(r => r.roundWinner === 'hider').length;
-    const losses = results.filter(r => r.roundWinner === 'seeker').length;
-    const winRate = results.length > 0 ? (wins / results.length * 100).toFixed(2) : '0';
+    const result = this.simulationResult();
+    if (!result) {
+      return { wins: 0, losses: 0, winRate: 0 };
+    }
+    const winRate = result.totalRounds > 0 
+      ? (result.roundsWonPlayer / result.totalRounds * 100) 
+      : 0;
     
-    return { wins, losses, winRate: parseFloat(winRate) };
+    return { 
+      wins: result.roundsWonPlayer, 
+      losses: result.roundsWonComputer, 
+      winRate 
+    };
   }
 }

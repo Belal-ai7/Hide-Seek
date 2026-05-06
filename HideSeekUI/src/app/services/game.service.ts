@@ -1,334 +1,236 @@
 import { Injectable, signal, computed } from '@angular/core';
-
-export type PlaceType = 'hard' | 'neutral' | 'easy';
-export type PlayerRole = 'hider' | 'seeker' | null;
-export type GameMode = 'interactive' | 'simulation' | null;
+import { HttpClient } from '@angular/common/http';
 
 export interface Place {
   id: number;
-  type: PlaceType;
-  hiderScore: number;
-  seekerScore: number;
-}
-
-export interface GameResult {
-  hiderChoice: number;
-  seekerChoice: number;
-  hiderScore: number;
-  seekerScore: number;
-  roundWinner: 'hider' | 'seeker' | 'draw';
+  type: 'easy' | 'neutral' | 'hard';
 }
 
 @Injectable({
   providedIn: 'root'
 })
 export class GameService {
-  // Game configuration signals
-  private worldSize = signal<number>(4);
+  private readonly API_URL = 'http://localhost:5000/api';
+
+  // --- Signals for UI State ---
+  private numPlaces = signal<number>(4);
   private places = signal<Place[]>([]);
-  private playerRole = signal<PlayerRole>(null);
-  private gameMode = signal<GameMode>(null);
+  private payoffMatrix = signal<number[][]>([]);
+  private probabilities = signal<number[]>([]);
+  private gameValue = signal<number>(0);
   
-  // Game state signals
-  private playerChoice = signal<number | null>(null);
-  private computerChoice = signal<number | null>(null);
-  private gameResult = signal<GameResult | null>(null);
-  private isGameStarted = signal<boolean>(false);
-  private isRoundPlayed = signal<boolean>(false);
-  
-  // Score tracking
-  private playerTotalScore = signal<number>(0);
-  private computerTotalScore = signal<number>(0);
-  private roundsWon = signal<number>(0);
-  private computerRoundsWon = signal<number>(0);
+  private playerScore = signal<number>(0);
+  private computerScore = signal<number>(0);
+  private roundsWonPlayer = signal<number>(0);
+  private roundsWonComputer = signal<number>(0);
   private totalRounds = signal<number>(0);
-  
-  // Simulation mode
-  private simulationRounds = signal<number>(100);
-  private simulationResults = signal<GameResult[]>([]);
-  
-  // Computed values
-  readonly worldSizeValue = computed(() => this.worldSize());
+
+  private playerRole = signal<'hider' | 'seeker' | null>(null);
+  private selectedPosition = signal<number | null>(null);
+  private isRoundPlayed = signal<boolean>(false);
+  private lastRoundResult = signal<{
+    playerPosition: number;
+    opponentPosition: number;
+    winner: 'player' | 'computer';
+    message: string;
+  } | null>(null);
+
+  private viewMode = signal<'1D' | '2D'>('1D');
+  private isSimulating = signal<boolean>(false);
+  private simulationProgress = signal<number>(0);
+  private simulationResult = signal<{
+    totalRounds: number;
+    playerScore: number;
+    computerScore: number;
+    roundsWonPlayer: number;
+    roundsWonComputer: number;
+  } | null>(null);
+
+  // --- Computed Values for Components ---
+  readonly numPlacesValue = computed(() => this.numPlaces());
   readonly placesValue = computed(() => this.places());
+  readonly matrix = computed(() => this.payoffMatrix());
+  readonly probs = computed(() => this.probabilities());
+  readonly gameValueAmount = computed(() => this.gameValue());
+  readonly score = computed(() => ({
+    player: this.playerScore(),
+    computer: this.computerScore(),
+    playerWins: this.roundsWonPlayer(),
+    computerWins: this.roundsWonComputer(),
+    total: this.totalRounds()
+  }));
   readonly playerRoleValue = computed(() => this.playerRole());
-  readonly gameModeValue = computed(() => this.gameMode());
-  readonly playerChoiceValue = computed(() => this.playerChoice());
-  readonly computerChoiceValue = computed(() => this.computerChoice());
-  readonly gameResultValue = computed(() => this.gameResult());
-  readonly isGameStartedValue = computed(() => this.isGameStarted());
+  readonly selectedPositionValue = computed(() => this.selectedPosition());
   readonly isRoundPlayedValue = computed(() => this.isRoundPlayed());
-  readonly playerTotalScoreValue = computed(() => this.playerTotalScore());
-  readonly computerTotalScoreValue = computed(() => this.computerTotalScore());
-  readonly roundsWonValue = computed(() => this.roundsWon());
-  readonly computerRoundsWonValue = computed(() => this.computerRoundsWon());
-  readonly totalRoundsValue = computed(() => this.totalRounds());
-  readonly simulationRoundsValue = computed(() => this.simulationRounds());
-  readonly simulationResultsValue = computed(() => this.simulationResults());
+  readonly lastRoundResultValue = computed(() => this.lastRoundResult());
+  readonly viewModeValue = computed(() => this.viewMode());
+  readonly isSimulatingValue = computed(() => this.isSimulating());
+  readonly simulationProgressValue = computed(() => this.simulationProgress());
+  readonly simulationResultValue = computed(() => this.simulationResult());
 
-  // Initialize the game world
-  initializeWorld(size: number): void {
-    this.worldSize.set(size);
-    const newPlaces: Place[] = [];
-    
-    for (let i = 0; i < size; i++) {
-      const type = this.randomPlaceType();
-      const scores = this.getScoresForType(type);
-      
-      newPlaces.push({
-        id: i,
-        type,
-        hiderScore: scores.hider,
-        seekerScore: scores.seeker
-      });
-    }
-    
-    this.places.set(newPlaces);
+  constructor(private http: HttpClient) {}
+
+  // Initialize world with given number of places
+  initializeWorld(numPlaces: number): void {
+    this.numPlaces.set(numPlaces);
+    // Generate placeholder places (types will be determined by backend on solve)
+    const places: Place[] = Array.from({ length: numPlaces }, (_, i) => ({
+      id: i,
+      type: 'neutral' as const
+    }));
+    this.places.set(places);
     this.resetRound();
-  }
-
-  // Get scores based on place type
-  private getScoresForType(type: PlaceType): { hider: number; seeker: number } {
-    switch (type) {
-      case 'hard':
-        return { hider: 1, seeker: 3 }; // Hard for seeker: seeker gets more, hider gets less
-      case 'neutral':
-        return { hider: 2, seeker: 2 }; // Neutral: equal scores
-      case 'easy':
-        return { hider: 3, seeker: 1 }; // Easy for seeker: hider gets more, seeker gets less
-      default:
-        return { hider: 2, seeker: 2 };
-    }
-  }
-
-  // Random place type generation
-  private randomPlaceType(): PlaceType {
-    const rand = Math.random();
-    if (rand < 0.33) return 'hard';
-    if (rand < 0.66) return 'neutral';
-    return 'easy';
   }
 
   // Set player role
-  setPlayerRole(role: PlayerRole): void {
+  setPlayerRole(role: 'hider' | 'seeker'): void {
     this.playerRole.set(role);
-    this.isGameStarted.set(true);
   }
 
-  // Set game mode
-  setGameMode(mode: GameMode): void {
-    this.gameMode.set(mode);
+  // Toggle view mode
+  toggleViewMode(): void {
+    this.viewMode.set(this.viewMode() === '1D' ? '2D' : '1D');
   }
 
-  // Player makes a choice
+  // Make player choice
   makePlayerChoice(position: number): void {
-    if (position < 0 || position >= this.worldSize()) {
-      throw new Error('Invalid position');
-    }
-    this.playerChoice.set(position);
+    this.selectedPosition.set(position);
   }
 
-  // Computer makes a choice using simple random strategy (can be enhanced with LP)
-  makeComputerChoice(): number {
-    const computerPosition = Math.floor(Math.random() * this.worldSize());
-    this.computerChoice.set(computerPosition);
-    return computerPosition;
-  }
-
-  // Play a round
-  playRound(): GameResult {
-    const playerPos = this.playerChoice();
-    if (playerPos === null) {
-      throw new Error('Player must make a choice first');
-    }
-
-    const computerPos = this.makeComputerChoice();
-    const places = this.places();
-    
-    let hiderScore = 0;
-    let seekerScore = 0;
-    let roundWinner: 'hider' | 'seeker' | 'draw' = 'draw';
-
-    if (this.playerRole() === 'hider') {
-      // Player is hider, computer is seeker
-      if (playerPos === computerPos) {
-        // Seeker found hider
-        seekerScore = places[computerPos].seekerScore;
-        hiderScore = -seekerScore; // Hider loses points
-        roundWinner = 'seeker';
-      } else {
-        // Hider not found
-        hiderScore = places[playerPos].hiderScore;
-        seekerScore = -hiderScore; // Seeker loses points
-        roundWinner = 'hider';
-      }
-      
-      // Apply proximity bonus (bonus feature)
-      const distance = Math.abs(playerPos - computerPos);
-      if (distance === 1) {
-        hiderScore = Math.round(hiderScore * 0.5 * 100) / 100;
-      } else if (distance === 2) {
-        hiderScore = Math.round(hiderScore * 0.75 * 100) / 100;
-      }
-      
-      this.playerTotalScore.update(s => s + hiderScore);
-      this.computerTotalScore.update(s => s + seekerScore);
-      
-    } else {
-      // Player is seeker, computer is hider
-      if (playerPos === computerPos) {
-        // Seeker found hider
-        seekerScore = places[playerPos].seekerScore;
-        hiderScore = -seekerScore;
-        roundWinner = 'seeker';
-      } else {
-        // Hider not found
-        hiderScore = places[computerPos].hiderScore;
-        seekerScore = -hiderScore;
-        roundWinner = 'hider';
-      }
-      
-      // Apply proximity bonus
-      const distance = Math.abs(playerPos - computerPos);
-      if (distance === 1) {
-        hiderScore = Math.round(hiderScore * 0.5 * 100) / 100;
-      } else if (distance === 2) {
-        hiderScore = Math.round(hiderScore * 0.75 * 100) / 100;
-      }
-      
-      this.playerTotalScore.update(s => s + seekerScore);
-      this.computerTotalScore.update(s => s + hiderScore);
-    }
-
-    const result: GameResult = {
-      hiderChoice: this.playerRole() === 'hider' ? playerPos : computerPos,
-      seekerChoice: this.playerRole() === 'seeker' ? playerPos : computerPos,
-      hiderScore,
-      seekerScore,
-      roundWinner
-    };
-
-    this.gameResult.set(result);
-    this.isRoundPlayed.set(true);
-    this.totalRounds.update(r => r + 1);
-    
-    if (roundWinner === 'hider') {
-      if (this.playerRole() === 'hider') {
-        this.roundsWon.update(r => r + 1);
-      } else {
-        this.computerRoundsWon.update(r => r + 1);
-      }
-    } else if (roundWinner === 'seeker') {
-      if (this.playerRole() === 'seeker') {
-        this.roundsWon.update(r => r + 1);
-      } else {
-        this.computerRoundsWon.update(r => r + 1);
-      }
-    }
-
-    return result;
-  }
-
-  // Reset round for new game
+  // Reset current round
   resetRound(): void {
-    this.playerChoice.set(null);
-    this.computerChoice.set(null);
-    this.gameResult.set(null);
+    this.selectedPosition.set(null);
     this.isRoundPlayed.set(false);
+    this.lastRoundResult.set(null);
   }
 
-  // Reset entire game
-  resetGame(): void {
-    this.playerRole.set(null);
-    this.gameMode.set(null);
-    this.playerTotalScore.set(0);
-    this.computerTotalScore.set(0);
-    this.roundsWon.set(0);
-    this.computerRoundsWon.set(0);
-    this.totalRounds.set(0);
-    this.simulationResults.set([]);
-    this.resetRound();
-    this.isGameStarted.set(false);
-  }
-
-  // Run simulation mode
-  runSimulation(rounds: number = 100): GameResult[] {
-    this.simulationRounds.set(rounds);
-    const results: GameResult[] = [];
-    
-    for (let i = 0; i < rounds; i++) {
-      // Random choices for both players
-      const hiderChoice = Math.floor(Math.random() * this.worldSize());
-      const seekerChoice = Math.floor(Math.random() * this.worldSize());
-      
-      this.playerChoice.set(hiderChoice);
-      this.computerChoice.set(seekerChoice);
-      
-      const places = this.places();
-      let hiderScore = 0;
-      let seekerScore = 0;
-      let roundWinner: 'hider' | 'seeker' | 'draw' = 'draw';
-      
-      if (hiderChoice === seekerChoice) {
-        seekerScore = places[seekerChoice].seekerScore;
-        hiderScore = -seekerScore;
-        roundWinner = 'seeker';
-      } else {
-        hiderScore = places[hiderChoice].hiderScore;
-        seekerScore = -hiderScore;
-        roundWinner = 'hider';
-      }
-      
-      // Apply proximity bonus
-      const distance = Math.abs(hiderChoice - seekerChoice);
-      if (distance === 1) {
-        hiderScore = Math.round(hiderScore * 0.5 * 100) / 100;
-      } else if (distance === 2) {
-        hiderScore = Math.round(hiderScore * 0.75 * 100) / 100;
-      }
-      
-      this.playerTotalScore.update(s => s + hiderScore);
-      this.computerTotalScore.update(s => s + seekerScore);
-      this.totalRounds.update(r => r + 1);
-      
-      if (roundWinner === 'hider') {
-        this.roundsWon.update(r => r + 1);
-      } else if (roundWinner === 'seeker') {
-        this.computerRoundsWon.update(r => r + 1);
-      }
-      
-      results.push({
-        hiderChoice,
-        seekerChoice,
-        hiderScore,
-        seekerScore,
-        roundWinner
+  // 1. POST /api/solve - Solve the game and get optimal strategy
+  solveGame(): void {
+    const numPlaces = this.numPlaces();
+    this.http.post<any>(`${this.API_URL}/solve`, { num_places: numPlaces })
+      .subscribe(res => {
+        if (res.status === 'ok') {
+          this.payoffMatrix.set(res.payoff_matrix);
+          this.probabilities.set(res.probabilities);
+          this.gameValue.set(res.game_value);
+          this.updatePlaceTypesFromMatrix(res.payoff_matrix);
+        }
       });
-    }
-    
-    this.simulationResults.set(results);
-    return results;
+  }
+
+  // 2. POST /api/play - Play a single round
+  playRound(): void {
+    const role = this.playerRole();
+    const place = this.selectedPosition();
+    const numPlaces = this.numPlaces();
+
+    if (!role || place === null) return;
+
+    this.http.post<any>(`${this.API_URL}/play`, { 
+      role, 
+      place, 
+      num_places: numPlaces 
+    }).subscribe(res => {
+      if (res.status === 'ok') {
+        this.updateLocalState(res);
+        this.isRoundPlayed.set(true);
+        
+        // Determine player and opponent positions based on role
+        const playerPosition = place;
+        const opponentPosition = res.opponent_place;
+        const playerWon = res.winner === role;
+
+        this.lastRoundResult.set({
+          playerPosition,
+          opponentPosition,
+          winner: playerWon ? 'player' : 'computer',
+          message: res.message
+        });
+      }
+    });
+  }
+
+  // 3. POST /api/simulate - Run simulation
+  simulateGame(numRounds: number = 100): void {
+    const numPlaces = this.numPlaces();
+    this.isSimulating.set(true);
+    this.simulationProgress.set(0);
+
+    this.http.post<any>(`${this.API_URL}/simulate`, { 
+      num_places: numPlaces, 
+      num_rounds: numRounds 
+    }).subscribe(res => {
+      if (res.status === 'ok') {
+        this.updateLocalState(res);
+        this.simulationResult.set({
+          totalRounds: res.total_rounds,
+          playerScore: res.player_score,
+          computerScore: res.computer_score,
+          roundsWonPlayer: res.rounds_won_player,
+          roundsWonComputer: res.rounds_won_computer
+        });
+        this.simulationProgress.set(numRounds);
+      }
+      this.isSimulating.set(false);
+    });
+  }
+
+  // 4. POST /api/reset - Reset all game state
+  resetGame(): void {
+    this.http.post<any>(`${this.API_URL}/reset`, {}).subscribe(res => {
+      if (res.status === 'ok') {
+        this.updateLocalState(res);
+        this.payoffMatrix.set([]);
+        this.probabilities.set([]);
+        this.gameValue.set(0);
+        this.simulationResult.set(null);
+        this.simulationProgress.set(0);
+        this.resetRound();
+      }
+    });
+  }
+
+  // 5. GET /api/state - Sync state from server
+  syncState(): void {
+    this.http.get<any>(`${this.API_URL}/state`).subscribe(res => {
+      if (res.status === 'ok') {
+        this.updateLocalState(res);
+      }
+    });
+  }
+
+  // Helper to update score state from response
+  private updateLocalState(res: any): void {
+    if (res.player_score !== undefined) this.playerScore.set(res.player_score);
+    if (res.computer_score !== undefined) this.computerScore.set(res.computer_score);
+    if (res.rounds_won_player !== undefined) this.roundsWonPlayer.set(res.rounds_won_player);
+    if (res.rounds_won_computer !== undefined) this.roundsWonComputer.set(res.rounds_won_computer);
+    if (res.total_rounds !== undefined) this.totalRounds.set(res.total_rounds);
+  }
+
+  // Helper to determine place types from payoff matrix diagonal
+  private updatePlaceTypesFromMatrix(matrix: number[][]): void {
+    const places = this.places();
+    const updatedPlaces = places.map((place, i) => {
+      // Check diagonal value to determine type
+      const diagonalValue = matrix[i]?.[i] ?? 0;
+      let type: 'easy' | 'neutral' | 'hard' = 'neutral';
+      
+      if (diagonalValue === -1) {
+        // Could be easy or neutral - check off-diagonal values
+        const offDiagValue = matrix[i]?.find((val, j) => j !== i) ?? 0;
+        type = offDiagValue === 2 ? 'easy' : 'neutral';
+      } else if (diagonalValue === -3) {
+        type = 'hard';
+      }
+      
+      return { ...place, type };
+    });
+    this.places.set(updatedPlaces);
   }
 
   // Get payoff matrix for display
   getPayoffMatrix(): number[][] {
-    const size = this.worldSize();
-    const places = this.places();
-    const matrix: number[][] = [];
-    
-    for (let hiderPos = 0; hiderPos < size; hiderPos++) {
-      const row: number[] = [];
-      for (let seekerPos = 0; seekerPos < size; seekerPos++) {
-        if (hiderPos === seekerPos) {
-          // Seeker found hider - hider loses
-          row.push(-places[seekerPos].seekerScore);
-        } else {
-          // Hider not found - hider gains
-          row.push(places[hiderPos].hiderScore);
-        }
-      }
-      matrix.push(row);
-    }
-    
-    return matrix;
+    return this.payoffMatrix();
   }
 }

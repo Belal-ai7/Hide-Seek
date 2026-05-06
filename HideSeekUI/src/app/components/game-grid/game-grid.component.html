@@ -52,6 +52,9 @@
                 [style.border-color]="getPlaceBorderColor(place)">
                 <span class="cell-number">{{ place.id + 1 }}</span>
                 <span class="cell-type">{{ getPlaceTypeLabel(place.type) }}</span>
+                @if (probabilities()[$index] !== undefined) {
+                  <span class="cell-probability">{{ formatProbability(probabilities()[$index]) }}</span>
+                }
               </div>
             }
           </div>
@@ -102,69 +105,127 @@
   @if (showGame()) {
     <div class="game-screen">
       <!-- Scoreboard -->
-      <div class="scoreboard">
-        <div class="score-item">
-          <span class="score-label">Your Score</span>
-          <span class="score-value">{{ playerTotalScore() }}</span>
-        </div>
-        <div class="score-item">
-          <span class="score-label">Computer Score</span>
-          <span class="score-value">{{ computerTotalScore() }}</span>
-        </div>
-        <div class="score-item">
-          <span class="score-label">Rounds Won</span>
-          <span class="score-value">{{ roundsWon() }} - {{ computerRoundsWon() }}</span>
-        </div>
-        <div class="score-item">
-          <span class="score-label">Total Rounds</span>
-          <span class="score-value">{{ totalRounds() }}</span>
-        </div>
-      </div>
-
-      <!-- Game Grid -->
+<div class="scoreboard">
+  <div class="score-item">
+    <span class="score-label">Your Score</span>
+    <!-- Add the parentheses here -->
+    <span class="score-value">{{ playerScore() }}</span>
+  </div>
+  <div class="score-item">
+    <span class="score-label">Computer Score</span>
+    <span class="score-value">{{ computerScore() }}</span>
+  </div>
+  <div class="score-item">
+    <span class="score-label">Rounds Won</span>
+    <span class="score-value">{{ roundsWonPlayer() }} - {{ roundsWonComputer() }}</span>
+  </div>
+  <div class="score-item">
+    <span class="score-label">Total Rounds</span>
+    <span class="score-value">{{ totalRounds() }}</span>
+  </div>
+</div>
+      <!-- Game Area -->
       <div class="game-area">
-        <h2>
-          @if (playerRole() === 'hider') {
-            Choose where to hide:
-          } @else {
-            Choose where to seek:
-          }
-        </h2>
-        
-        <div class="grid-container">
-          @for (place of places(); track place.id) {
-            <button
-              class="grid-cell"
-              [class.selected]="selectedPosition() === place.id"
-              [class.revealed]="isRoundPlayed() && gameResult()"
-              [class.computer-choice]="isRoundPlayed() && gameResult() && 
-                ((playerRole() === 'hider' && gameResult()?.seekerChoice === place.id) ||
-                 (playerRole() === 'seeker' && gameResult()?.hiderChoice === place.id))"
-              [style.background-color]="getPlaceColor(place)"
-              [style.border-color]="getPlaceBorderColor(place)"
-              [disabled]="isRoundPlayed()"
-              (click)="selectPosition(place.id)">
-              <span class="cell-number">{{ place.id + 1 }}</span>
-              <span class="cell-type-badge" [style.background-color]="getPlaceBorderColor(place)">
-                {{ getPlaceTypeLabel(place.type) }}
-              </span>
-              <div class="cell-scores">
-                <span class="score-hider">H: {{ place.hiderScore }}</span>
-                <span class="score-seeker">S: {{ place.seekerScore }}</span>
-              </div>
-              @if (isRoundPlayed() && gameResult()) {
-                @if ((playerRole() === 'hider' && gameResult()?.hiderChoice === place.id) ||
-                      (playerRole() === 'seeker' && gameResult()?.seekerChoice === place.id)) {
-                  <span class="player-marker">👤</span>
-                }
-                @if ((playerRole() === 'hider' && gameResult()?.seekerChoice === place.id) ||
-                      (playerRole() === 'seeker' && gameResult()?.hiderChoice === place.id)) {
-                  <span class="computer-marker">🤖</span>
-                }
-              }
+        <div class="game-area-header">
+          <h2>
+            @if (playerRole() === 'hider') {
+              Choose where to hide:
+            } @else {
+              Choose where to seek:
+            }
+          </h2>
+          <div class="view-toggle">
+            <button class="view-toggle-btn" (click)="toggleViewMode()">
+              {{ viewMode() === '1D' ? 'Switch to 2D Grid' : 'Switch to 1D Line' }}
             </button>
-          }
+          </div>
         </div>
+        
+        <!-- 1D Grid View -->
+        @if (viewMode() === '1D') {
+          <div class="grid-container grid-1d">
+            @for (place of places(); track place.id) {
+              <button
+                class="grid-cell"
+                [class.selected]="selectedPosition() === place.id"
+                [class.revealed]="isRoundPlayed() && lastRoundResult()"
+                [class.computer-choice]="isRoundPlayed() && lastRoundResult() && 
+                  lastRoundResult()?.opponentPosition === place.id"
+                [class.player-choice]="isRoundPlayed() && lastRoundResult() && 
+                  lastRoundResult()?.playerPosition === place.id"
+                [style.background-color]="getPlaceColor(place)"
+                [style.border-color]="getPlaceBorderColor(place)"
+                [disabled]="isRoundPlayed()"
+                (click)="selectPosition(place.id)">
+                <span class="cell-number">{{ place.id + 1 }}</span>
+                <span class="cell-type-badge" [style.background-color]="getPlaceBorderColor(place)">
+                  {{ getPlaceTypeLabel(place.type) }}
+                </span>
+                <!-- Probability Badge -->
+                @if (probabilities()[$index] !== undefined) {
+                  <span class="probability-badge" [class]="getProbabilityClass(probabilities()[$index])">
+                    {{ formatProbability(probabilities()[$index]) }}
+                  </span>
+                }
+                @if (isRoundPlayed() && lastRoundResult()) {
+                  @if (lastRoundResult()?.playerPosition === place.id) {
+                    <span class="player-marker">👤</span>
+                  }
+                  @if (lastRoundResult()?.opponentPosition === place.id) {
+                    <span class="computer-marker">🤖</span>
+                  }
+                }
+              </button>
+            }
+          </div>
+        }
+
+        <!-- 2D Grid View -->
+        @if (viewMode() === '2D') {
+          <div class="grid-container grid-2d">
+            @for (row of gridLayout(); track $index) {
+              <div class="grid-row">
+                @for (place of row; track place?.id || $index) {
+                  @if (place) {
+                    <button
+                      class="grid-cell grid-cell-2d"
+                      [class.selected]="selectedPosition() === place.id"
+                      [class.revealed]="isRoundPlayed() && lastRoundResult()"
+                      [class.computer-choice]="isRoundPlayed() && lastRoundResult() && 
+                        lastRoundResult()?.opponentPosition === place.id"
+                      [class.player-choice]="isRoundPlayed() && lastRoundResult() && 
+                        lastRoundResult()?.playerPosition === place.id"
+                      [style.background-color]="getPlaceColor(place)"
+                      [style.border-color]="getPlaceBorderColor(place)"
+                      [disabled]="isRoundPlayed()"
+                      (click)="selectPosition(place.id)">
+                      <span class="cell-number">{{ place.id + 1 }}</span>
+                      <span class="cell-type-badge" [style.background-color]="getPlaceBorderColor(place)">
+                        {{ getPlaceTypeLabel(place.type) }}
+                      </span>
+                      <!-- Probability Badge -->
+                      @if (probabilities()[$index] !== undefined) {
+                        <span class="probability-badge" [class]="getProbabilityClass(probabilities()[$index])">
+                          {{ formatProbability(probabilities()[$index]) }}
+                        </span>
+                      }
+                      @if (isRoundPlayed() && lastRoundResult()) {
+                        @if (lastRoundResult()?.playerPosition === place.id) {
+                          <span class="player-marker">👤</span>
+                        }
+                        @if (lastRoundResult()?.opponentPosition === place.id) {
+                          <span class="computer-marker">🤖</span>
+                        }
+                      }
+                    </button>
+                  } @else {
+                    <div class="grid-cell-empty"></div>
+                  }
+                }
+              </div>
+            }
+          </div>
+        }
 
         <!-- Action Buttons -->
         <div class="action-buttons">
@@ -178,63 +239,95 @@
             </button>
           }
           <button class="action-btn reset-btn" (click)="resetGame()">
-            Reset Game
+            🔄 Reset Game
           </button>
         </div>
       </div>
 
-      <!-- Results Panel -->
-      @if (showResults() && gameResult()) {
-        <div class="results-panel">
-          <h3>Round Result</h3>
-          <div class="result-content">
-            <p class="result-message">{{ getResultMessage() }}</p>
-            <div class="result-details">
-              <div class="detail-item">
-                <span class="detail-label">Hider chose:</span>
-                <span class="detail-value">Position {{ gameResult()?.hiderChoice! + 1 }}</span>
+      <!-- Round Result Overlay/Card -->
+      @if (showResults() && lastRoundResult()) {
+        <div class="round-result-overlay">
+          <div class="round-result-card">
+            <div class="result-header">
+              <h3>Round Result</h3>
+              <div class="result-winner-badge" [class]="lastRoundResult()?.winner === 'player' ? 'player-wins' : 'computer-wins'">
+                @if (lastRoundResult()?.winner === 'player') {
+                  <span>🎉 You Win!</span>
+                } @else {
+                  <span>😔 Computer Wins!</span>
+                }
               </div>
-              <div class="detail-item">
-                <span class="detail-label">Seeker chose:</span>
-                <span class="detail-value">Position {{ gameResult()?.seekerChoice! + 1 }}</span>
-              </div>
-              <div class="detail-item">
-                <span class="detail-label">Round Winner:</span>
-                <span class="detail-value">{{ gameResult()?.roundWinner === 'hider' ? 'Hider' : gameResult()?.roundWinner === 'seeker' ? 'Seeker' : 'Draw' }}</span>
+            </div>
+            
+            <div class="result-body">
+              <p class="result-message">{{ getResultMessage() }}</p>
+              
+              <div class="result-positions">
+                <div class="position-card">
+                  <span class="position-icon">👤</span>
+                  <span class="position-label">Your Position</span>
+                  <span class="position-value">
+                    Cell {{ (lastRoundResult()?.playerPosition ?? -1) + 1 }}
+                  </span>
+                </div>
+                <div class="position-card computer">
+                  <span class="position-icon">🤖</span>
+                  <span class="position-label">Computer's Position</span>
+                  <span class="position-value">
+                    Cell {{ (lastRoundResult()?.opponentPosition ?? -1) + 1 }}
+                  </span>
+                </div>
               </div>
             </div>
           </div>
         </div>
       }
 
-      <!-- Simulation Results -->
-      @if (simulationMode() && simulationResults().length > 0) {
-        <div class="simulation-panel">
-          <h3>Simulation Results (100 Rounds)</h3>
-          <div class="sim-stats">
-            <div class="stat-item">
-              <span class="stat-label">Hider Wins</span>
-              <span class="stat-value">{{ getSimulationStats().wins }}</span>
+      <!-- Simulation Dashboard -->
+      @if (simulationMode() && simulationResult()) {
+        <div class="simulation-dashboard">
+          <h3>Simulation Results</h3>
+          
+          <!-- Stats Grid -->
+          <div class="sim-dashboard-stats">
+            <div class="dash-stat-item player-stat">
+              <span class="dash-stat-icon">👤</span>
+              <span class="dash-stat-label">Your Wins</span>
+              <span class="dash-stat-value">{{ simulationResult()?.roundsWonPlayer }}</span>
+              <span class="dash-stat-sublabel">out of {{ simulationResult()?.totalRounds }}</span>
             </div>
-            <div class="stat-item">
-              <span class="stat-label">Seeker Wins</span>
-              <span class="stat-value">{{ getSimulationStats().losses }}</span>
+            <div class="dash-stat-item computer-stat">
+              <span class="dash-stat-icon">🤖</span>
+              <span class="dash-stat-label">Computer Wins</span>
+              <span class="dash-stat-value">{{ simulationResult()?.roundsWonComputer }}</span>
+              <span class="dash-stat-sublabel">out of {{ simulationResult()?.totalRounds }}</span>
             </div>
-            <div class="stat-item">
-              <span class="stat-label">Win Rate</span>
-              <span class="stat-value">{{ getSimulationStats().winRate }}%</span>
+            <div class="dash-stat-item score-stat">
+              <span class="dash-stat-icon">⭐</span>
+              <span class="dash-stat-label">Your Score</span>
+              <span class="dash-stat-value">{{ simulationResult()?.playerScore }}</span>
             </div>
-            <div class="stat-item">
-              <span class="stat-label">Total Score</span>
-              <span class="stat-value">{{ playerTotalScore() }}</span>
+            <div class="dash-stat-item score-stat computer-score">
+              <span class="dash-stat-icon">🏆</span>
+              <span class="dash-stat-label">Computer Score</span>
+              <span class="dash-stat-value">{{ simulationResult()?.computerScore }}</span>
             </div>
           </div>
+
+          <!-- Win Rate -->
+          @if (simulationResult() && simulationResult()?.totalRounds! > 0) {
+            <div class="win-rate-display">
+              <span class="win-rate-label">Win Rate:</span>
+              <span class="win-rate-value">{{ getSimulationStats().winRate.toFixed(1) }}%</span>
+            </div>
+          }
         </div>
       }
     </div>
   }
 
   <!-- Payoff Matrix -->
+  @if (payoffMatrix().length > 0) {
   <div class="matrix-section">
     <h2>Payoff Matrix (Hider's Perspective)</h2>
     <div class="matrix-container">
@@ -266,4 +359,5 @@
       Positive values favor Hider, negative values favor Seeker.
     </p>
   </div>
+  }
 </div>
