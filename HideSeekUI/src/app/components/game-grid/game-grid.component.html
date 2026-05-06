@@ -1,0 +1,269 @@
+<div class="game-container">
+  <header class="game-header">
+    <h1>Hide & Seek Game</h1>
+    <p class="subtitle">Operations Research - Game Theory</p>
+  </header>
+
+  <!-- Setup Screen -->
+  @if (showSetup()) {
+    <div class="setup-screen">
+      <div class="setup-card">
+        <h2>Game Setup</h2>
+        
+        <!-- World Size Selection -->
+        <div class="setup-section">
+          <h3>World Size (N)</h3>
+          <div class="size-selector">
+            @for (size of [4, 6, 8, 10, 12, 16]; track size) {
+              <button 
+                class="size-btn" 
+                [class.active]="worldSizeInput() === size"
+                (click)="setWorldSize(size)">
+                {{ size }}
+              </button>
+            }
+          </div>
+        </div>
+
+        <!-- Place Types Legend -->
+        <div class="setup-section">
+          <h3>Place Types</h3>
+          <div class="legend">
+            @for (place of placeTypes; track place.type) {
+              <div class="legend-item">
+                <span class="legend-color" [style.background-color]="place.color"></span>
+                <div class="legend-info">
+                  <strong>{{ place.label }}</strong>
+                  <span>{{ place.description }}</span>
+                </div>
+              </div>
+            }
+          </div>
+        </div>
+
+        <!-- Current World Preview -->
+        <div class="setup-section">
+          <h3>Current World</h3>
+          <div class="world-preview">
+            @for (place of places(); track place.id) {
+              <div 
+                class="preview-cell"
+                [style.background-color]="getPlaceColor(place)"
+                [style.border-color]="getPlaceBorderColor(place)">
+                <span class="cell-number">{{ place.id + 1 }}</span>
+                <span class="cell-type">{{ getPlaceTypeLabel(place.type) }}</span>
+              </div>
+            }
+          </div>
+        </div>
+
+        <!-- Role Selection -->
+        <div class="setup-section">
+          <h3>Choose Your Role</h3>
+          <div class="role-selector">
+            <button 
+              class="role-btn"
+              [class.active]="playerRole() === 'hider'"
+              (click)="selectRole('hider')">
+              <span class="role-icon">🙈</span>
+              <span class="role-name">Hider</span>
+              <span class="role-desc">Hide from the seeker</span>
+            </button>
+            <button 
+              class="role-btn"
+              [class.active]="playerRole() === 'seeker'"
+              (click)="selectRole('seeker')">
+              <span class="role-icon">🔍</span>
+              <span class="role-name">Seeker</span>
+              <span class="role-desc">Find the hider</span>
+            </button>
+          </div>
+        </div>
+
+        <!-- Mode Selection -->
+        <div class="setup-section">
+          <div class="mode-toggle">
+            <label class="toggle-label">
+              <input type="checkbox" [(ngModel)]="simulationMode" (change)="toggleSimulationMode()">
+              <span class="toggle-text">Simulation Mode</span>
+            </label>
+          </div>
+          @if (simulationMode()) {
+            <button class="simulate-btn" (click)="runSimulation()">
+              Run 100 Rounds Simulation
+            </button>
+          }
+        </div>
+      </div>
+    </div>
+  }
+
+  <!-- Game Screen -->
+  @if (showGame()) {
+    <div class="game-screen">
+      <!-- Scoreboard -->
+      <div class="scoreboard">
+        <div class="score-item">
+          <span class="score-label">Your Score</span>
+          <span class="score-value">{{ playerTotalScore() }}</span>
+        </div>
+        <div class="score-item">
+          <span class="score-label">Computer Score</span>
+          <span class="score-value">{{ computerTotalScore() }}</span>
+        </div>
+        <div class="score-item">
+          <span class="score-label">Rounds Won</span>
+          <span class="score-value">{{ roundsWon() }} - {{ computerRoundsWon() }}</span>
+        </div>
+        <div class="score-item">
+          <span class="score-label">Total Rounds</span>
+          <span class="score-value">{{ totalRounds() }}</span>
+        </div>
+      </div>
+
+      <!-- Game Grid -->
+      <div class="game-area">
+        <h2>
+          @if (playerRole() === 'hider') {
+            Choose where to hide:
+          } @else {
+            Choose where to seek:
+          }
+        </h2>
+        
+        <div class="grid-container">
+          @for (place of places(); track place.id) {
+            <button
+              class="grid-cell"
+              [class.selected]="selectedPosition() === place.id"
+              [class.revealed]="isRoundPlayed() && gameResult()"
+              [class.computer-choice]="isRoundPlayed() && gameResult() && 
+                ((playerRole() === 'hider' && gameResult()?.seekerChoice === place.id) ||
+                 (playerRole() === 'seeker' && gameResult()?.hiderChoice === place.id))"
+              [style.background-color]="getPlaceColor(place)"
+              [style.border-color]="getPlaceBorderColor(place)"
+              [disabled]="isRoundPlayed()"
+              (click)="selectPosition(place.id)">
+              <span class="cell-number">{{ place.id + 1 }}</span>
+              <span class="cell-type-badge" [style.background-color]="getPlaceBorderColor(place)">
+                {{ getPlaceTypeLabel(place.type) }}
+              </span>
+              <div class="cell-scores">
+                <span class="score-hider">H: {{ place.hiderScore }}</span>
+                <span class="score-seeker">S: {{ place.seekerScore }}</span>
+              </div>
+              @if (isRoundPlayed() && gameResult()) {
+                @if ((playerRole() === 'hider' && gameResult()?.hiderChoice === place.id) ||
+                      (playerRole() === 'seeker' && gameResult()?.seekerChoice === place.id)) {
+                  <span class="player-marker">👤</span>
+                }
+                @if ((playerRole() === 'hider' && gameResult()?.seekerChoice === place.id) ||
+                      (playerRole() === 'seeker' && gameResult()?.hiderChoice === place.id)) {
+                  <span class="computer-marker">🤖</span>
+                }
+              }
+            </button>
+          }
+        </div>
+
+        <!-- Action Buttons -->
+        <div class="action-buttons">
+          @if (!isRoundPlayed()) {
+            <button class="action-btn play-btn" (click)="playRound()">
+              Play Round
+            </button>
+          } @else {
+            <button class="action-btn next-btn" (click)="playNextRound()">
+              Next Round
+            </button>
+          }
+          <button class="action-btn reset-btn" (click)="resetGame()">
+            Reset Game
+          </button>
+        </div>
+      </div>
+
+      <!-- Results Panel -->
+      @if (showResults() && gameResult()) {
+        <div class="results-panel">
+          <h3>Round Result</h3>
+          <div class="result-content">
+            <p class="result-message">{{ getResultMessage() }}</p>
+            <div class="result-details">
+              <div class="detail-item">
+                <span class="detail-label">Hider chose:</span>
+                <span class="detail-value">Position {{ gameResult()?.hiderChoice! + 1 }}</span>
+              </div>
+              <div class="detail-item">
+                <span class="detail-label">Seeker chose:</span>
+                <span class="detail-value">Position {{ gameResult()?.seekerChoice! + 1 }}</span>
+              </div>
+              <div class="detail-item">
+                <span class="detail-label">Round Winner:</span>
+                <span class="detail-value">{{ gameResult()?.roundWinner === 'hider' ? 'Hider' : gameResult()?.roundWinner === 'seeker' ? 'Seeker' : 'Draw' }}</span>
+              </div>
+            </div>
+          </div>
+        </div>
+      }
+
+      <!-- Simulation Results -->
+      @if (simulationMode() && simulationResults().length > 0) {
+        <div class="simulation-panel">
+          <h3>Simulation Results (100 Rounds)</h3>
+          <div class="sim-stats">
+            <div class="stat-item">
+              <span class="stat-label">Hider Wins</span>
+              <span class="stat-value">{{ getSimulationStats().wins }}</span>
+            </div>
+            <div class="stat-item">
+              <span class="stat-label">Seeker Wins</span>
+              <span class="stat-value">{{ getSimulationStats().losses }}</span>
+            </div>
+            <div class="stat-item">
+              <span class="stat-label">Win Rate</span>
+              <span class="stat-value">{{ getSimulationStats().winRate }}%</span>
+            </div>
+            <div class="stat-item">
+              <span class="stat-label">Total Score</span>
+              <span class="stat-value">{{ playerTotalScore() }}</span>
+            </div>
+          </div>
+        </div>
+      }
+    </div>
+  }
+
+  <!-- Payoff Matrix -->
+  <div class="matrix-section">
+    <h2>Payoff Matrix (Hider's Perspective)</h2>
+    <div class="matrix-container">
+      <table class="payoff-matrix">
+        <thead>
+          <tr>
+            <th></th>
+            @for (seekerPos of matrixHeaders(); track seekerPos) {
+              <th>S{{ seekerPos }}</th>
+            }
+          </tr>
+        </thead>
+        <tbody>
+          @for (row of payoffMatrix(); track $index) {
+            <tr>
+              <th>H{{ $index + 1 }}</th>
+              @for (cell of row; track $index) {
+                <td [class.positive]="cell > 0" [class.negative]="cell < 0">
+                  {{ cell }}
+                </td>
+              }
+            </tr>
+          }
+        </tbody>
+      </table>
+    </div>
+    <p class="matrix-note">
+      Rows represent Hider's choices, Columns represent Seeker's choices.
+      Positive values favor Hider, negative values favor Seeker.
+    </p>
+  </div>
+</div>
