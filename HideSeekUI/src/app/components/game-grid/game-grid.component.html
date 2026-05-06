@@ -87,7 +87,7 @@
         <div class="setup-section">
           <div class="mode-toggle">
             <label class="toggle-label">
-              <input type="checkbox" [(ngModel)]="simulationMode" (change)="toggleSimulationMode()">
+              <input type="checkbox" [checked]="simulationMode()" (change)="toggleSimulationMode()">
               <span class="toggle-text">Simulation Mode</span>
             </label>
           </div>

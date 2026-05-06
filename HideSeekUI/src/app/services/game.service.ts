@@ -106,16 +106,29 @@ export class GameService {
 
   // 1. POST /api/solve - Solve the game and get optimal strategy
   solveGame(): void {
+    this.solveAndThen();
+  }
+
+  /**
+   * Calls /api/solve and, on success, runs the optional callback.
+   * Used by simulation mode to chain solve → simulate atomically.
+   */
+  solveAndThen(onSuccess?: () => void): void {
     const numPlaces = this.numPlaces();
-    this.http.post<any>(`${this.API_URL}/solve`, { num_places: numPlaces })
-      .subscribe(res => {
-        if (res.status === 'ok') {
-          this.payoffMatrix.set(res.payoff_matrix);
-          this.probabilities.set(res.probabilities);
-          this.gameValue.set(res.game_value);
-          this.updatePlaceTypesFromMatrix(res.payoff_matrix);
-        }
-      });
+    const role = this.playerRole();
+
+    this.http.post<any>(`${this.API_URL}/solve`, {
+      num_places: numPlaces,
+      player_role: role
+    }).subscribe(res => {
+      if (res.status === 'ok') {
+        this.payoffMatrix.set(res.payoff_matrix);
+        this.probabilities.set(res.probabilities);
+        this.gameValue.set(res.game_value);
+        this.updatePlaceTypesFromMatrix(res.payoff_matrix);
+        onSuccess?.();
+      }
+    });
   }
 
   // 2. POST /api/play - Play a single round

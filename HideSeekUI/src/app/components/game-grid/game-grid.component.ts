@@ -26,11 +26,11 @@ export class GameGridComponent implements OnInit {
   selectedPosition = this.gameService.selectedPositionValue;
   isRoundPlayed = this.gameService.isRoundPlayedValue;
   lastRoundResult = this.gameService.lastRoundResultValue;
- playerScore = computed(() => this.gameService.score().player);
-computerScore = computed(() => this.gameService.score().computer);
-roundsWonPlayer = computed(() => this.gameService.score().playerWins);
-roundsWonComputer = computed(() => this.gameService.score().computerWins);
-totalRounds = computed(() => this.gameService.score().total);
+  playerScore = computed(() => this.gameService.score().player);
+  computerScore = computed(() => this.gameService.score().computer);
+  roundsWonPlayer = computed(() => this.gameService.score().playerWins);
+  roundsWonComputer = computed(() => this.gameService.score().computerWins);
+  totalRounds = computed(() => this.gameService.score().total);
   probabilities = this.gameService.probs;
   viewMode = this.gameService.viewModeValue;
   isSimulating = this.gameService.isSimulatingValue;
@@ -50,16 +50,16 @@ totalRounds = computed(() => this.gameService.score().total);
   gridLayout = computed(() => {
     const places = this.places();
     const currentViewMode = this.viewMode();
-    
+
     if (currentViewMode === '1D') {
       return [places];
     }
-    
+
     // 2D layout - calculate grid dimensions
     const size = places.length;
     const cols = Math.ceil(Math.sqrt(size));
     const rows = Math.ceil(size / cols);
-    
+
     const grid: (Place | null)[][] = [];
     for (let row = 0; row < rows; row++) {
       const rowData: (Place | null)[] = [];
@@ -151,7 +151,7 @@ totalRounds = computed(() => this.gameService.score().total);
   // Game methods
   selectPosition(position: number): void {
     if (this.isRoundPlayed()) return;
-    
+
     this.gameService.makePlayerChoice(position);
   }
 
@@ -179,11 +179,21 @@ totalRounds = computed(() => this.gameService.score().total);
   }
 
   runSimulation(): void {
+    // Simulation mode bypasses role selection, so default to 'hider' if unset.
+    if (!this.gameService.playerRoleValue()) {
+      this.gameService.setPlayerRole('hider');
+    }
+
     this.gameService.resetGame();
     this.gameService.initializeWorld(this.worldSizeInput());
-    this.gameService.simulateGame(100);
-    this.showGame.set(true);
-    this.showResults.set(true);
+
+    // Must solve FIRST (async) so the backend stores a payoff matrix,
+    // then simulate inside the callback to guarantee ordering.
+    this.gameService.solveAndThen(() => {
+      this.gameService.simulateGame(100);
+      this.showGame.set(true);
+      this.showResults.set(true);
+    });
   }
 
   // Get result message
@@ -199,14 +209,14 @@ totalRounds = computed(() => this.gameService.score().total);
     if (!result) {
       return { wins: 0, losses: 0, winRate: 0 };
     }
-    const winRate = result.totalRounds > 0 
-      ? (result.roundsWonPlayer / result.totalRounds * 100) 
+    const winRate = result.totalRounds > 0
+      ? (result.roundsWonPlayer / result.totalRounds * 100)
       : 0;
-    
-    return { 
-      wins: result.roundsWonPlayer, 
-      losses: result.roundsWonComputer, 
-      winRate 
+
+    return {
+      wins: result.roundsWonPlayer,
+      losses: result.roundsWonComputer,
+      winRate
     };
   }
 }
