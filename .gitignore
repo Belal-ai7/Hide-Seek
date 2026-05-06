@@ -1,3 +1,16 @@
-echo "venv/" >> .gitignore
-echo "__pycache__/" >> .gitignore
-echo "*.pyc" >> .gitignore
+# Python (Backend)
+venv/
+__pycache__/
+*.pyc
+.env
+instance/
+
+# Angular / Node (Frontend)
+frontend/node_modules/
+frontend/dist/
+frontend/.angular/
+frontend/.editorconfig
+.vscode/
+
+# System files
+.DS_Store
