@@ -171,7 +171,8 @@ export class GameService {
 
     this.http.post<any>(`${this.API_URL}/simulate`, { 
       num_places: numPlaces, 
-      num_rounds: numRounds 
+      num_rounds: numRounds,
+      player_role: this.playerRole() ?? 'hider'   // FIX: send role so simulation is perspective-correct
     }).subscribe(res => {
       if (res.status === 'ok') {
         this.updateLocalState(res);

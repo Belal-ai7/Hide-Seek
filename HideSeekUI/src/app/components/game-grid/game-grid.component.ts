@@ -18,6 +18,7 @@ export class GameGridComponent implements OnInit {
   showGame = signal<boolean>(false);
   showResults = signal<boolean>(false);
   simulationMode = signal<boolean>(false);
+  simulationRole = signal<'hider' | 'seeker'>('hider');
 
   // Game state from service
   places = this.gameService.placesValue;
@@ -144,6 +145,10 @@ export class GameGridComponent implements OnInit {
     this.simulationMode.set(!this.simulationMode());
   }
 
+  setSimulationRole(role: 'hider' | 'seeker'): void {
+    this.simulationRole.set(role);
+  }
+
   toggleViewMode(): void {
     this.gameService.toggleViewMode();
   }
@@ -179,10 +184,8 @@ export class GameGridComponent implements OnInit {
   }
 
   runSimulation(): void {
-    // Simulation mode bypasses role selection, so default to 'hider' if unset.
-    if (!this.gameService.playerRoleValue()) {
-      this.gameService.setPlayerRole('hider');
-    }
+    // Use the role chosen in the simulation dropdown.
+    this.gameService.setPlayerRole(this.simulationRole());
 
     this.gameService.resetGame();
     this.gameService.initializeWorld(this.worldSizeInput());

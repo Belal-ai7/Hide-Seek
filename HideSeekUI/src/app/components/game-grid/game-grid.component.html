@@ -83,17 +83,31 @@
           </div>
         </div>
 
-        <!-- Mode Selection -->
         <div class="setup-section">
-          <div class="mode-toggle">
+          <div class="sim-controls-row">
             <label class="toggle-label">
               <input type="checkbox" [checked]="simulationMode()" (change)="toggleSimulationMode()">
               <span class="toggle-text">Simulation Mode</span>
             </label>
+
+            @if (simulationMode()) {
+              <div class="sim-role-dropdown-wrap">
+                <label class="sim-role-label" for="sim-role-select">Role</label>
+                <select
+                  id="sim-role-select"
+                  class="sim-role-select"
+                  [value]="simulationRole()"
+                  (change)="setSimulationRole($any($event.target).value)">
+                  <option value="hider">🙈 Hider</option>
+                  <option value="seeker">🔍 Seeker</option>
+                </select>
+              </div>
+            }
           </div>
+
           @if (simulationMode()) {
             <button class="simulate-btn" (click)="runSimulation()">
-              Run 100 Rounds Simulation
+              Run 100 Rounds as {{ simulationRole() === 'hider' ? '🙈 Hider' : '🔍 Seeker' }}
             </button>
           }
         </div>

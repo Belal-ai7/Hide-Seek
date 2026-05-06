@@ -75,16 +75,17 @@ class HideAndSeekGame:
         }
 
     @staticmethod
-    def simulate_game(num_places, payoff_matrix, num_rounds=100):
+    def simulate_game(num_places, payoff_matrix, num_rounds=100, player_role="hider"):
         player_score = 0
         computer_score = 0
         rounds_won_player = 0
         rounds_won_computer = 0
         for _ in range(num_rounds):
-            role = random.choice(["hider", "seeker"])
+            # FIX: Use the fixed player role instead of randomly choosing each round.
+            # Previously, `role` was random, making seeker-view simulation incorrect.
             place = random.randint(0, num_places - 1)
-            result = HideAndSeekGame.play_game(place, role, num_places, payoff_matrix)
-            if result["winner"] == role:
+            result = HideAndSeekGame.play_game(place, player_role, num_places, payoff_matrix)
+            if result["winner"] == player_role:
                 rounds_won_player += 1
                 player_score += result["your_score"]
             else:

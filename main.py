@@ -138,11 +138,14 @@ def simulate():
 
     num_places = data.get("num_places")
     num_rounds = data.get("num_rounds", 100)
+    player_role = data.get("player_role", "hider")  # FIX: read role from request
 
     if not isinstance(num_places, int) or num_places <= 0:
         return error_response("Field 'num_places' must be a positive integer.")
     if not isinstance(num_rounds, int) or num_rounds <= 0:
         return error_response("Field 'num_rounds' must be a positive integer.")
+    if player_role not in {"hider", "seeker"}:
+        return error_response("Field 'player_role' must be 'hider' or 'seeker'.")
 
     # FIX: Same as /api/play — reuse the stored matrix.
     stored_matrix = game_state.get("payoff_matrix")
@@ -155,7 +158,7 @@ def simulate():
 
     payoff_matrix = game_state["payoff_matrix"]
 
-    sim_result = HideAndSeekGame.simulate_game(num_places, payoff_matrix, num_rounds)
+    sim_result = HideAndSeekGame.simulate_game(num_places, payoff_matrix, num_rounds, player_role)
     game_state["total_rounds"] += num_rounds
     game_state["player_score"] += sim_result["player_score"]
     game_state["computer_score"] += sim_result["computer_score"]
